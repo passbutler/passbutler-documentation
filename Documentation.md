@@ -113,6 +113,12 @@ The plain master password must NEVER sent to server to ensure E2E encryption: if
 
 - Liste von allen Usern (beschränkte Felder)
 
+#### PUT /v1/users
+
+- Allows to "register" a local user to become a remote user on server - only possible if:
+  - Configuration value `ENABLE_REGISTRATION` is set to `True`
+  - User does not exists in database
+
 #### GET /v1/user
 
 - Lesen aller Felder des eigenen Benutzers
