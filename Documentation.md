@@ -109,15 +109,15 @@ The plain master password must NEVER sent to server to ensure E2E encryption: if
 
 - zeitlich beschränktes Access-Token, welches mit Benutzer/Passwort abholbar ist für einen nicht-gelöscht-flagged Benutzer
 
-#### GET /v1/users
-
-- Liste von allen Usern (beschränkte Felder)
-
-#### PUT /v1/users
+#### PUT /v1/register
 
 - Allows to "register" a local user to become a remote user on server - only possible if:
   - Configuration value `ENABLE_REGISTRATION` is set to `True`
   - User does not exists in database
+
+#### GET /v1/users
+
+- Liste von allen Usern (beschränkte Felder)
 
 #### GET /v1/user
 
