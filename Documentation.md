@@ -1,89 +1,83 @@
 # Pass Butler documentation
 
-Author: Bastian Raschke <bastian.raschke@posteo.de>
-
-## Features
-
-- Synchronisation to server
-- End-to-end encryption (server compromise does not compromises user data)
-- Share passwords with users on same server instance
-- Biometric unlock
-- Autolock after amount of time - if locked, no sensitive data is stored in memory
-- Flat list of entries (no groups) - search with name/tags
-- Modern UI (Material design, supports dark mode)
-- Android Autofill system service
-
-## Password entry
-
-- Icon
-- Username
-- Password
-- URL
-- Notes
-- Tags (for search)
-
-## Synchronisation
-
-All model entities are identified via UUID (no auto increment ID to be sure clients that are not always synced do not create conflicts). The up-to-dateness of an model entity is determined via modified timestamp. Model entities are never deleted in database - instead they contain a deleted field - this makes new/deleted detection much more simple.
-
-The synchronisation process:
-
-1) Load list of local entities
-2) Load list of remote entities
-3) Detect new local entities and insert locally
-4) Detect new remote entities and insert remotely
-5) Detect modified local entities (according to modified field) and update locally
-6) Detect modified remote entities (according to modified field) and update remotely
+Pass Butler is a password manager which provides a private cloud solution to synchronize the user data to be able to use it on multiple devices easily. The user data is end-to-end (E2E) encrypted to ensure the data can't even read by server administrator. Additionally Pass Butler offers password sharing which means a user can grant access to selected passwords to other user on the server (e.g. to share Wifi passwords in a team). This involves techniques which will be documented in this file.
 
 ## Model entities
 
 ### User
 
-- **username**
-- masterPasswordAuthenticationHash
-- masterKeyDerivationInformation
-- masterEncryptionKey (protected)
-- itemEncryptionPublicKey
-- itemEncryptionSecretKey (protected)
-- settings (protected)
-- deleted
-- modified
-- created
+| Column                           | Encrypted | Description                                                                                                            |
+|:---------------------------------|:----------|:-----------------------------------------------------------------------------------------------------------------------|
+| id                               | no        | The primary key of the entity (UUID)                                                                                   |
+| username                         | no        | A unique user identifying string                                                                                       |
+| masterPasswordAuthenticationHash | no        | The [Server Authentication Hash](#server-authentication-hash)                                                          |
+| masterKeyDerivationInformation   | no        | A random salt and iteration count to derive the [Master Key](#master-key) from the [Master Password](#master-password) |
+| masterEncryptionKey              | yes       | The [Master Encryption Key](#master-encryption-key)                                                                    |
+| itemEncryptionPublicKey          | no        | The public part of the [Item Encryption Key Pair](#item-encryption-key-pair)                                           |
+| itemEncryptionSecretKey          | yes       | The private part of the [Item Encryption Key Pair](#item-encryption-key-pair)                                          |
+| settings                         | yes       | The user settings                                                                                                      |
+| deleted                          | no        | Indicates if the entity was deleted                                                                                    |
+| modified                         | no        | The unix timestamp of last modification                                                                                |
+| created                          | no        | The unix timestamp of creation                                                                                         |
 
 ### Item
 
-- **id**
-- username (owner / creator)
-- itemdata (actual item data)
-- deleted
-- modified
-- created
+| Column   | Encrypted | Description                                                        |
+|:---------|:----------|:-------------------------------------------------------------------|
+| id       | no        | The primary key of the entity (UUID)                               |
+| username | no        | The creator / owner of the item                                    |
+| itemData | yes       | Contains actual data of the item (username, password, notes, etc.) |
+| deleted  | no        | Indicates if the entity was deleted                                |
+| modified | no        | The unix timestamp of last modification                            |
+| created  | no        | The unix timestamp of creation                                     |
 
 ### Item Authorization
 
-- **id**
-- username
-- item_id
-- itemkey (protected with users `Item Encryption Key Pair` public key)
-- readonly
-- deleted
-- modified
-- created
+| Column   | Encrypted | Description                                                   |
+|:---------|:----------|:--------------------------------------------------------------|
+| id       | no        | The primary key of the entity (UUID)                          |
+| userId   | no        | The user id that can use the authorization to access the item |
+| itemId   | no        | The item id to which was granted access to                    |
+| itemKey  | yes       | The symmetric key to decrypt the item data                    |
+| readOnly | no        | Indicates if the authorization to access the item is readonly |
+| deleted  | no        | Indicates if the entity was deleted                           |
+| modified | no        | The unix timestamp of last modification                       |
+| created  | no        | The unix timestamp of creation                                |
 
-## Security architecture
+## Cryptographic algorithms
 
-### Cryptografic entities
+### PBKDF2-SHA256 {#pbkdf2-sha256}
 
-#### `Master Password`
+A key derivation algorithm that uses SHA-256. It needs a salt and an iteration count to slow down computing time (brute forcing).
 
-- Benutzerpasswort
+### AES-256-GCM {#aes-256-gcm}
 
-#### `Master Key`
+A symmetric encryption algorithm with a key length of 256 bit in Galois/Counter mode (GCM) that ensures not only the privacy of the data but also the authentication to protect against tampering the encrypted data. A random initialization vector (IV) that must never recycled is needed for the block mode. The algorithm is very fast and suitable for all kinds of data amount.
 
-- Ableitung: PBKDF2-SHA256(`Master Password`, Salt, Iterations=100000)
-- muss nicht gespeichert werden (wird durch `Master Password` abgeleitet)
+### RSA-2048-OAEP {#rsa-2048-oaep}
 
-#### `Master Encryption Key`
+An asymmetric encryption algorithm with a key length of 2048 bit that consists of a public and a private/secret part. The public part allows to encrypt data, the private part allows to decrypt the data. The algorithm is slow and only suitable for small data.
+
+## Cryptographic entities
+
+### Master Password {#master-password}
+
+The user password that protects all other data. It should be long and complex because the complete security relies on it! It is stored in memory only temporary for computing and is overridden afterwards immediately.
+
+### Master Key {#master-key}
+
+The symmetric encryption/description key that is derived from the [Master Password](#master-password) with [PBKDF2-SHA256](#pbkdf2-sha256) with an iteration count and a random salt stored in `User.masterKeyDerivationInformation`. Like the [Master Password](#master-password), it is derived and stored in memory only temporary for computing and is overridden afterwards immediately.
+
+
+
+
+
+
+
+### Master Encryption Key
+
+`User.masterEncryptionKey`
+
 
 - symmetrischer AES 256 Key
 - zur Verschlüsselung von geschützen Nutzerdaten
@@ -91,66 +85,48 @@ The synchronisation process:
 - bleibt immer gleich (wird bei Änderung des `Master Key` neu verschlüsselt)
 - geschützen Nutzerdaten werden nicht direkt mit `Master Key` verschlüsselt, um bei einer Passwortänderung die potentiell fehlerintensive Neuverschlüsselung aller einzelnen Nutzerdaten zu vermeiden)
 
-#### `Item Encryption Key Pair`
+### Item Encryption Key Pair {#item-encryption-key-pair}
 
 - asymmetrisches RSA 2048-Schlüsselpaar
 - zur Verschlüsselung von Item Keys welche die `Item.data` schützen
 - nötig damit Items anderen Nutzern geteilt werden können (neuer `ItemAuthorization` für neuen Nutzer wird angelegt und der `itemkey` mit dessen öffentlichen Schlüssel verschlüsselt)
 
-## Server API
 
-### Authentication
 
-The plain master password must NEVER sent to server to ensure E2E encryption: if the server get compromised, the attacker can't decrypt the user data if it is only possible for him to eavedrop the authentication passwords but NOT the master passwords of the users. So the master password is first hashed (PBKDF2-SHA256 with 100001 iterations - one iteration more than for `Master Key` derivation - using the username as the salt) on client side and send to the server where it is hashed again (PBKDF2-SHA256 with 150000 iterations - 50k iterations more to more slow down computing time). It is hashed on server again to avoid the "hash-is-the-password" situation where an attacker can straight-forward authenticate with stolen hashes.
+### Local Authentication Hash {#local-authentication-hash}
 
-### Server resources
+This hash is used to authenticate on the server together with the username. It is a replacement for a classic username and password authentication to ensure the [Master Password](#master-password) never ever leaves the local client to ensure E2E encryption but also proves, that the user knows the master password. It is derived with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation to differ from it).
 
-#### GET /v1/token
+### Server Authentication Hash {#server-authentication-hash}
 
-- zeitlich beschränktes Access-Token, welches mit Benutzer/Passwort abholbar ist für einen nicht-gelöscht-flagged Benutzer
+This hash 
 
-#### PUT /v1/register
 
-- Allows to "register" a local user to become a remote user on server - only possible if:
-  - Configuration value `ENABLE_REGISTRATION` is set to `True`
-  - User does not exists in database
+## Server authentication
 
-#### GET /v1/users
 
-- Liste von allen Usern (beschränkte Felder)
+The plain master password must NEVER sent to server to ensure E2E encryption: if the server get compromised, the attacker can't decrypt the user data if it is only possible for him to eavesdrop the authentication passwords but NOT the master passwords of the users. So the master password is first hashed with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation) on client side and send to the server where it is hashed again ([PBKDF2-SHA256](#pbkdf2-sha256) with 150000 iterations - around 50k iterations more to more slow down computing time). It is hashed on server again to avoid the "hash-is-the-password" situation where an attacker can straight-forward authenticate with stolen hashes.
 
-#### GET /v1/user
+Token request process:
 
-- Lesen aller Felder des eigenen Benutzers
+1) Client requests token with username and [Local Authentication Hash](#local-authentication-hash)
+2) Server hashes the received [Local Authentication Hash](#local-authentication-hash) again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and iteration count stored in `User.masterPasswordAuthenticationHash`. If the calculated hash matches the hash value also stored in `User.masterPasswordAuthenticationHash`, the client is authenticated and the server responds a valid bearer token (JWT)
 
-#### PUT /v1/user
+All later requests are authenticated with the bearer token to avoid the procedure for every request.
 
-- Schreiben veränderlicher Felder des eigenen Benutzers
 
-#### GET /v1/user/itemauthorizations
 
-- Liste aller:
-  - Itemauthorizations, auf die der eigene Benutzer Zugriff hat (this.userId == currentUserId) 
-  - Itemauthorizations, der der aktuelle Benutzer an andere Benutzer ausgestellt hat (this.itemId.userId == currentUserId)
 
-Hinweis: Itemauthorizations, die gelöscht-flagged wurden, werden auch gelistet, damit entsprechende Benutzer diese syncen können.
 
-#### PUT /v1/user/itemauthorizations
+## Synchronization process
 
-- akzeptiert Liste von Itemauthorizations, dessen Item dem eigenen Benutzer gehört (this.itemId.userId == currentUserId) - nur der Autor eines Item kann Itemauthorizations erstellen/verändern
-- ausschließlich Schreiben veränderlicher Felder
+All model entities are identified via UUID (no auto increment ID to be sure clients that are not always synced do not create conflicts). The up-to-dateness of an model entity is determined via modified timestamp. Model entities are never deleted in database - instead they contain a deleted field - this makes new/deleted detection much more simple.
 
-Ablauf Berechtigung wird entzogen:
-- entsprechende Itemauthorization wird gelöscht-flagged
-- entsprechender Benutzer kann aktuelle Version vom Item nicht mehr laden (lokale Kopie aber weiterhin verfügbar auf dessen Datenstand)
+The following steps are executed for all model entities:
 
-#### GET /v1/user/items
-
-- Liste von Items für die der eigene Benutzer eine nicht-gelöscht-flagged Itemauthorization besitzt
-
-Hinweis: Items, die gelöscht-flagged wurden, werden auch gelistet, damit entsprechende Benutzer diese Information syncen können, solange sie eine nicht-gelöscht-flagged Itemauthorization haben. Der gelöscht-flagged Status soll wie jede andere Veränderung des Items wirksam und sichtbar sein für alle zugelassenen Benutzer. 
-
-#### PUT /v1/user/items
-
-- akzeptiert Liste von Items für die der eigene Benutzer eine nicht-gelöscht-flagged und "read only" = False Itemauthorization ausgestellt bekommen hat
-- ausschließlich Schreiben veränderlicher Felder
+1) Load list of local entities
+2) Load list of remote entities
+3) Detect new local entities and insert locally
+4) Detect new remote entities and insert remotely
+5) Detect modified local entities (according to modified field) and update locally
+6) Detect modified remote entities (according to modified field) and update remotely
