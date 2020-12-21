@@ -1,6 +1,6 @@
 # Pass Butler documentation
 
-Pass Butler is a password manager which provides a private cloud solution to synchronize the user data to be able to use it on multiple devices easily. The user data is end-to-end (E2E) encrypted to ensure the data can't even read by server administrator. Additionally Pass Butler offers password sharing which means a user can grant access to selected passwords to other user on the server (e.g. to share Wifi passwords in a team). This involves techniques which will be documented in this file.
+Pass Butler is a password manager which features a private cloud solution to synchronize the user data to use it on multiple devices easily. All user data is end-to-end (E2E) encrypted to ensure the data can't even read by the server administrator. Additionally Pass Butler offers a password sharing which means a user can grant/revoke access to selected password items to other user on the server (e.g. to share Wifi passwords in a team). This involves technologies which will be documented here.
 
 ## Model entities
 
@@ -43,17 +43,16 @@ Pass Butler is a password manager which provides a private cloud solution to syn
 
 ### Item Authorization {#item-authorization}
 
-| Column   | Encrypted | Description                                                   |
-|:---------|:----------|:--------------------------------------------------------------|
-| id       | no        | The primary key of the entity (UUID)                          |
-| userId   | no        | The user ID that can use the authorization to access the item |
-| itemId   | no        | The item ID to which was granted access to                    |
-| itemKey  | yes       | The symmetric key to decrypt the item data                    |
-| readOnly | no        | Indicates if the authorization to access the item is readonly |
-| deleted  | no        | Indicates if the authorization was revoked                    |
-| modified | no        | The unix timestamp of last modification                       |
-| created  | no        | The unix timestamp of creation                                |
-
+| Column   | Encrypted | Description                                                    |
+|:---------|:----------|:---------------------------------------------------------------|
+| id       | no        | The primary key of the entity (UUID)                           |
+| userId   | no        | The user ID that can use the authorization to access the item  |
+| itemId   | no        | The item ID to which was granted access to                     |
+| itemKey  | yes       | The symmetric key to decrypt the item data                     |
+| readOnly | no        | Indicates if the authorization to access the item is read only |
+| deleted  | no        | Indicates if the authorization was revoked                     |
+| modified | no        | The unix timestamp of last modification                        |
+| created  | no        | The unix timestamp of creation                                 |
 
 ## Security
 
@@ -62,15 +61,15 @@ The Pass Butler security architecture is based on the following principles:
 - Usage of strong, modern cryptographic algorithms
 - Usage of well-known cryptographic implementations (Java Security and JavaX Crypto)
 - Unit test cryptographic code with official test vectors to ensure correct implementation usage
-- Do not persist the [Master Password](#master-password) nor the [Master Key](#master-key) on disk and store only temporarily in memory for computations
+- Never ever persist the [Master Password](#master-password) nor the [Master Key](#master-key) to disk and store it only temporarily in memory for computations
 
-### Cryptographic algorithms
+### Cryptographic technology
 
-The following algorithms are used in Pass Butler.
+The following cryptographic technology is used:
 
 #### PBKDF2-SHA256 {#pbkdf2-sha256}
 
-A key derivation algorithm that uses SHA-256. It needs a salt and an iteration count to slow down computing time (brute forcing).
+A key derivation algorithm that uses SHA-256. It needs a salt and an iteration count to slow down computing (brute forcing).
 
 #### AES-256-GCM {#aes-256-gcm}
 
@@ -78,17 +77,17 @@ A symmetric encryption algorithm with a key length of 256 bit in Galois/Counter 
 
 #### RSA-2048-OAEP {#rsa-2048-oaep}
 
-An asymmetric encryption algorithm with a key length of 2048 bit that consists of a public and a private/secret part. The public part allows to encrypt data, the private part allows to decrypt the data. The algorithm is slow and only suitable for small data.
+An asymmetric encryption algorithm with a key length of 2048 bit that consists of a public and a private part. The public part allows to encrypt data, the private part allows to decrypt the data. The algorithm is slow and only suitable for small data.
 
 #### SecureRandom
 
-Technically not an algorithm, but very important to operate the above algorithms in a secure manner. Pass Butler uses the default constructor of `java.security.SecureRandom` which uses `/dev/urandom` on Unix based systems as the source of random data under the hood. It is non-blocking and is [suitable](https://tersesystems.com/blog/2015/12/17/the-right-way-to-use-securerandom) also to provide cryptographic keys.
+Pass Butler uses the default constructor of `java.security.SecureRandom` which utilizes `/dev/urandom` on Unix based systems as the source of random data. It is non-blocking and is [capable](https://tersesystems.com/blog/2015/12/17/the-right-way-to-use-securerandom) to provide secure cryptographic keys.
 
 ### Cryptographic entities
 
 #### Master Password {#master-password}
 
-The user password that protects all other data. It should be long and complex because the complete security relies on it! The *Master Password* is stored in memory only temporary for computing and is overridden afterwards immediately.
+The user password that protects all other data. It should be long and complex because the security architecture relies on it! The *Master Password* is stored in memory only temporary for computing and is overridden afterwards immediately.
 
 #### Master Key {#master-key}
 
@@ -98,43 +97,35 @@ The *Master Key* is a symmetric [AES-256-GCM](#aes-256-gcm) key that is derived 
 
 The [Master Key](#master-key) could be used directly to encrypt user data but if the user wants to change its [Master Password](#master-password), all encrypted bulk data would have to be re-encrypted. This is a resource consuming task and takes the risk of data curruption. To avoid this situation, the *Master Encryption Key* is introduced:
 
-It is a symmetric key for [AES-256-GCM](#aes-256-gcm), is random generated once and encrypts sensible data of the user (e.g. the user settings). The *Master Encryption Key* is stored in the `User.masterEncryptionKey` field and is itself encrypted with the [Master Key](#master-key). If the user now wants to change its [Master Password](#master-password), only the same *Master Encryption Key* needs to be re-encrypted.
+It is a symmetric key for [AES-256-GCM](#aes-256-gcm), is generated once and encrypts sensible data of the user (e.g. the user settings). The *Master Encryption Key* is stored in the `User.masterEncryptionKey` field and is itself encrypted with the [Master Key](#master-key). If the user wants to change its [Master Password](#master-password) now, only the same *Master Encryption Key* needs to be re-encrypted.
 
 #### Item Key {#item-key}
 
-For a simple password manager it would be reasonable to encrypt the sensible [Item Data](#item-data) simply with the [Master Encryption Key](#master-encryption-key). But because Pass Butler offers a password item sharing functionality a bit more complexity must be introduced.
+For a normal password manager it would be reasonable to encrypt the sensible [Item Data](#item-data) of an [Item](#item) just with the [Master Encryption Key](#master-encryption-key). But because an item sharing functionality is featured, a bit more complexity (and keys) must be introduced.
 
-Every user that have access to an [Item](#item) has also an appropriate [Item Authorization](#item-authorization) - this contains the ID of the given user and item and also the [Item Key](#item-key). 
+The *Item Key* is a symmetric [AES-256-GCM](#aes-256-gcm) key which actually encrypts the [Item Data](#item-data).
 
-The *Item Key* is a symmetric [AES-256-GCM](#aes-256-gcm) key which encrypts the actual sensible [Item Data](#item-data) of an [Item](#item) and is stored in the field `ItemAuthorization.itemKey`. It is itself encrypted with the public part of the [Item Encryption Key Pair](#item-encryption-key-pair) of the user (stored in `User.itemEncryptionPublicKey`) for whom the [Item Authorization](#item-authorization) is intended.
+Every user that have access to an [Item](#item) has also an appropriate [Item Authorization](#item-authorization) - this contains an user ID, an item ID and the *Item Key* stored in the field `ItemAuthorization.itemKey`. It is itself encrypted with the public part of the [Item Encryption Key Pair](#item-encryption-key-pair) of the user for whom the [Item Authorization](#item-authorization) is intended.
 
 #### Item Encryption Key Pair {#item-encryption-key-pair}
 
-The Item Encryption Key Pair is an asymmetric key pair ([RSA-2048-OAEP](#rsa-2048-oaep)).
+The Item Encryption Key Pair is an asymmetric key pair ([RSA-2048-OAEP](#rsa-2048-oaep)) consists of a public and a private part:
 
-
-
-
-
-
-
-
-
-
-
-
-
+- the public part (stored in `User.itemEncryptionPublicKey` field) is needed to be able to share an item to another user (the [Item Key](#item-key) of the [Item](#item) desired to share is re-encrypted with it)
+- the private part (stored in `User.itemEncryptionSecretKey` field) is needed for the other user to decrypt the encrypted [Item Key](#item-key) and access the [Item Data](#item-data) of the shared [Item](#item). The private part is itself encrypted with the [Master Encryption Key](#master-encryption-key).
 
 #### Local Authentication Hash {#local-authentication-hash}
 
-This hash is used to authenticate to the server together with the username. It is a replacement for a classic username and password authentication to ensure the [Master Password](#master-password) never ever leaves the local client to ensure E2E encryption but also proves, that the user knows the master password. It is derived with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation to clearly distinguish between the [Master Key](#master-key) derivation).
+This hash is used to authenticate to the server together with the username. It is a replacement for a basic username and password authentication to ensure the [Master Password](#master-password) never ever leaves the local client to ensure E2E encryption but also proves, that the user knows the master password. It is derived with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation to clearly distinguish between the [Master Key](#master-key) derivation).
 
 #### Server Authentication Hash {#server-authentication-hash}
 
 The [Local Authentication Hash](#local-authentication-hash) could be checked directly on server side to see if the user authentication was successful. It is not a clear text password so it seems to be practicable. But this would involve two major problems:
 
-1. It simplifies brute force attacks significantly: Because no resource consuming cryptographic hash function is involved, the attacker could try a lot of authentications per time only limited by the network link and computing power of the server hardware 
+1. It simplifies brute force attacks significantly: Because no resource consuming cryptographic hash function is involved, the attacker could try a lot of authentications per time only limited by the network and computing power of the server hardware 
 2. It would introduce the "hash-is-the-password" situation where an attacker can straight-forward authenticate with stolen hashes
+
+TODO
 
 send to the server where it is hashed again ([PBKDF2-SHA256](#pbkdf2-sha256) with 150000 iterations - around 50k iterations more to more slow down computing time). 
 
@@ -144,10 +135,10 @@ Server hashes the received [Local Authentication Hash](#local-authentication-has
 
 All normal requests to the server must be authenticated with a valid bearer token (JWT). Only the token request must be authenticated with the username and the [Local Authentication Hash](#local-authentication-hash).
 
-The token authentication avoids two problems:
+The token authentication tackles two problems:
 
-1. Sending a sensible long-time static secret (the [Local Authentication Hash](#local-authentication-hash)) every single request to the server (despite the server connection is TLS encrypted, this should be avoided) - instead only a short-time token is sent, which becomes totally worthless after expiration time
-2. The authentication with username and the [Local Authentication Hash](#local-authentication-hash) is a lot slower because of the resource intense computing of the hashes - the token validity check is very fast and cheap
+1. Sending a sensible long-time static secret (the [Local Authentication Hash](#local-authentication-hash)) every single request to the server (the server connection may be TLS encrypted but this shouldn't be the assumption) - instead only a short-time token is sent, which becomes totally worthless after the short validity period
+2. The authentication with username and the [Local Authentication Hash](#local-authentication-hash) is a lot slower because of the resource intense computing of the [PBKDF2-SHA256](#pbkdf2-sha256) hashes - the token validity check is very fast and cheap
 
 The token request process works like the following:
 
@@ -158,14 +149,22 @@ Later requests are authenticated with the token. If the token is rejected by the
 
 ### Item sharing
 
+As a simple example, Alice wants to share its item *Item_alice* to her friend Bob.
 
+1. Alice enters her [Master Password](#master-password) and derives her [Master Key](#master-key)
+2. Alice decrypt its [Master Encryption Key](#master-encryption-key) with the [Master Key](#master-key)
+3. Alice decrypt its private part of her [Item Encryption Key Pair](#item-encryption-key-pair) with the [Master Encryption Key](#master-encryption-key)
+4. Alice decrypt the [Item Key](#item-key) in her [Item Authorization](#item-authorization) of *Item_alice* with the private part of her [Item Encryption Key Pair](#item-encryption-key-pair)
+5. Alice encrypt the [Item Key](#item-key) with the public part of the [Item Encryption Key Pair](#item-encryption-key-pair) of Bob
+6. Alice create a new [Item Authorization](#item-authorization) with the item ID of *Item_alice*, the user ID of Bob and the re-encrypted [Item Key](#item-key) of previous step
 
+Now Bob is able to access the *Item_alice* with the following steps:
 
-
-
-
-
-
+1. Bob enters his [Master Password](#master-password) and derives his [Master Key](#master-key)
+2. Bob decrypt its [Master Encryption Key](#master-encryption-key) with the [Master Key](#master-key)
+3. Bob decrypt its private part of his [Item Encryption Key Pair](#item-encryption-key-pair) with the [Master Encryption Key](#master-encryption-key)
+4. Bob decrypt the [Item Key](#item-key) in his [Item Authorization](#item-authorization) of *Item_alice* with the private part of his [Item Encryption Key Pair](#item-encryption-key-pair)
+5. Bob decrypt the [Item Data](#item-data) of *Item_alice* with the decrypted [Item Key](#item-key) and can access the item
 
 ## Synchronization algorithm
 
