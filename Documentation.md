@@ -54,14 +54,14 @@ Pass Butler is a password manager which features a private cloud solution to syn
 | modified | no        | The unix timestamp of last modification                        |
 | created  | no        | The unix timestamp of creation                                 |
 
-## Security
+## Security architecture
 
 The Pass Butler security architecture is based on the following principles:
 
 - Usage of strong, modern cryptographic algorithms
 - Usage of well-known cryptographic implementations (Java Security and JavaX Crypto)
-- Unit test cryptographic code with official test vectors to ensure correct implementation usage
-- Never ever persist the [Master Password](#master-password) nor the [Master Key](#master-key) to disk and store it only temporarily in memory for computations
+- Unit test cryptographic code with official test vectors to ensure correct usage of the cryptographic implementations
+- Never ever persist the [Master Password](#master-password) nor the [Master Key](#master-key) to disk (store it only temporarily in memory for computations)
 
 ### Cryptographic technology
 
@@ -131,23 +131,7 @@ send to the server where it is hashed again ([PBKDF2-SHA256](#pbkdf2-sha256) wit
 
 Server hashes the received [Local Authentication Hash](#local-authentication-hash) again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and defined iteration count stored in `User.masterPasswordAuthenticationHash`. If the calculated hash matches the hash value also stored in `User.masterPasswordAuthenticationHash`, the client is authenticated and the server responds a valid bearer token (JWT)
 
-### Server authentication
-
-All normal requests to the server must be authenticated with a valid bearer token (JWT). Only the token request must be authenticated with the username and the [Local Authentication Hash](#local-authentication-hash).
-
-The token authentication tackles two problems:
-
-1. Sending a sensible long-time static secret (the [Local Authentication Hash](#local-authentication-hash)) every single request to the server (the server connection may be TLS encrypted but this shouldn't be the assumption) - instead only a short-time token is sent, which becomes totally worthless after the short validity period
-2. The authentication with username and the [Local Authentication Hash](#local-authentication-hash) is a lot slower because of the resource intense computing of the [PBKDF2-SHA256](#pbkdf2-sha256) hashes - the token validity check is very fast and cheap
-
-The token request process works like the following:
-
-1. The client requests token by sending username and [Local Authentication Hash](#local-authentication-hash) to server
-2. The server checks if the requested user is not deleted (`User.deleted == 0`) and calculates the [Server Authentication Hash](#server-authentication-hash) from the received [Local Authentication Hash](#local-authentication-hash): If the result is the same as the field `User.masterPasswordAuthenticationHash` of the authenticating user, the server responds with a new token (with validity of 1 hour) to confirm successful authentication
-
-Later requests are authenticated with the token. If the token is rejected by the server (e.g. because it is expired or just invalid), the server responds with HTTP 401 error, so the client can automatically try to request a new token.
-
-### Item sharing
+### How does the item sharing work?
 
 As a simple example, Alice wants to share its item *Item_alice* to her friend Bob.
 
@@ -166,9 +150,25 @@ Now Bob is able to access the *Item_alice* with the following steps:
 4. Bob decrypt the [Item Key](#item-key) in his [Item Authorization](#item-authorization) of *Item_alice* with the private part of his [Item Encryption Key Pair](#item-encryption-key-pair)
 5. Bob decrypt the [Item Data](#item-data) of *Item_alice* with the decrypted [Item Key](#item-key) and can access the item
 
+### How does the server authentication work?
+
+All normal requests to the server must be authenticated with a valid bearer token (JWT). Only the token request must be authenticated with the username and the [Local Authentication Hash](#local-authentication-hash).
+
+The token authentication tackles two problems:
+
+1. Sending a sensible long-time static secret (the [Local Authentication Hash](#local-authentication-hash)) every single request to the server (the server connection may be TLS encrypted but this shouldn't be the assumption) - instead only a short-time token is sent, which becomes totally worthless after the short validity period
+2. The authentication with username and the [Local Authentication Hash](#local-authentication-hash) is a lot slower because of the resource intense computing of the [PBKDF2-SHA256](#pbkdf2-sha256) hashes - the token validity check is very fast and cheap
+
+The token request process works like the following:
+
+1. The client requests token by sending username and [Local Authentication Hash](#local-authentication-hash) to server
+2. The server checks if the requested user is not deleted (`User.deleted == 0`) and calculates the [Server Authentication Hash](#server-authentication-hash) from the received [Local Authentication Hash](#local-authentication-hash): If the result is the same as the field `User.masterPasswordAuthenticationHash` of the authenticating user, the server responds with a new token (with validity of 1 hour) to confirm successful authentication
+
+Later requests are authenticated with the token. If the token is rejected by the server (e.g. because it is expired or just invalid), the server responds with HTTP 401 error, so the client can automatically try to request a new token.
+
 ## Synchronization algorithm
 
-All model entities are identified via UUID (no auto increment integer ID to be sure clients that are not always in sync do not create conflicts with same auto incremented IDs). The up-to-date state of a model entity is determined with the modified date. Model entities are never deleted in database - instead they contain a deleted field - this makes new/deleted detection much more simple.
+All model entities are identified via UUID (no auto increment integer ID to be sure clients that are not always in sync do not create conflicts with same auto incremented IDs). The up-to-date state of a model entity is determined with the modified date. Model entities are never deleted in database - instead they contain a deleted field - this makes detection of new or deleted items much more simple.
 
 The following steps are executed for all model entities:
 
