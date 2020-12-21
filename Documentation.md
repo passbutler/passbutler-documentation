@@ -57,7 +57,16 @@ Pass Butler is a password manager which provides a private cloud solution to syn
 
 ## Security
 
+The Pass Butler security architecture is based on the following principles:
+
+- Usage of strong, modern cryptographic algorithms
+- Usage of well-known cryptographic implementations (Java Security and JavaX Crypto)
+- Unit test cryptographic code with official test vectors to ensure correct implementation usage
+- Do not persist the [Master Password](#master-password) nor the [Master Key](#master-key) on disk and store only temporarily in memory for computations
+
 ### Cryptographic algorithms
+
+The following algorithms are used in Pass Butler.
 
 #### PBKDF2-SHA256 {#pbkdf2-sha256}
 
@@ -65,11 +74,15 @@ A key derivation algorithm that uses SHA-256. It needs a salt and an iteration c
 
 #### AES-256-GCM {#aes-256-gcm}
 
-A symmetric encryption algorithm with a key length of 256 bit in Galois/Counter mode (GCM) that ensures not only the privacy of the data but also the authentication to protect against tampering the encrypted data. A random initialization vector (IV) that must never recycled is needed for the block mode. The algorithm is very fast and suitable for all kinds of data amount.
+A symmetric encryption algorithm with a key length of 256 bit in Galois/Counter mode (GCM) that ensures not only the privacy of the data but also the authentication to protect against tampering the encrypted data. A random initialization vector (IV) that must never be recycled is needed for the block mode. The algorithm is very fast and suitable for all kinds of data amounts.
 
 #### RSA-2048-OAEP {#rsa-2048-oaep}
 
 An asymmetric encryption algorithm with a key length of 2048 bit that consists of a public and a private/secret part. The public part allows to encrypt data, the private part allows to decrypt the data. The algorithm is slow and only suitable for small data.
+
+#### SecureRandom
+
+Technically not an algorithm, but very important to operate the above algorithms in a secure manner. Pass Butler uses the default constructor of `java.security.SecureRandom` which uses `/dev/urandom` on Unix based systems as the source of random data under the hood. It is non-blocking and is [suitable](https://tersesystems.com/blog/2015/12/17/the-right-way-to-use-securerandom) also to provide cryptographic keys.
 
 ### Cryptographic entities
 
@@ -99,6 +112,19 @@ The *Item Key* is a symmetric [AES-256-GCM](#aes-256-gcm) key which encrypts the
 
 The Item Encryption Key Pair is an asymmetric key pair ([RSA-2048-OAEP](#rsa-2048-oaep)).
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 #### Local Authentication Hash {#local-authentication-hash}
 
 This hash is used to authenticate to the server together with the username. It is a replacement for a classic username and password authentication to ensure the [Master Password](#master-password) never ever leaves the local client to ensure E2E encryption but also proves, that the user knows the master password. It is derived with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation to clearly distinguish between the [Master Key](#master-key) derivation).
@@ -110,18 +136,32 @@ The [Local Authentication Hash](#local-authentication-hash) could be checked dir
 1. It simplifies brute force attacks significantly: Because no resource consuming cryptographic hash function is involved, the attacker could try a lot of authentications per time only limited by the network link and computing power of the server hardware 
 2. It would introduce the "hash-is-the-password" situation where an attacker can straight-forward authenticate with stolen hashes
 
+send to the server where it is hashed again ([PBKDF2-SHA256](#pbkdf2-sha256) with 150000 iterations - around 50k iterations more to more slow down computing time). 
+
+Server hashes the received [Local Authentication Hash](#local-authentication-hash) again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and defined iteration count stored in `User.masterPasswordAuthenticationHash`. If the calculated hash matches the hash value also stored in `User.masterPasswordAuthenticationHash`, the client is authenticated and the server responds a valid bearer token (JWT)
 
 ### Server authentication
 
+All normal requests to the server must be authenticated with a valid bearer token (JWT). Only the token request must be authenticated with the username and the [Local Authentication Hash](#local-authentication-hash).
 
-The plain master password must NEVER sent to server to ensure E2E encryption: if the server get compromised, the attacker can't decrypt the user data if it is only possible for him to eavesdrop the authentication passwords but NOT the master passwords of the users. So the master password is first hashed with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation) on client side and send to the server where it is hashed again ([PBKDF2-SHA256](#pbkdf2-sha256) with 150000 iterations - around 50k iterations more to more slow down computing time). It is hashed on server again to avoid the "hash-is-the-password" situation where an attacker can straight-forward authenticate with stolen hashes.
+The token authentication avoids two problems:
 
-Token request process:
+1. Sending a sensible long-time static secret (the [Local Authentication Hash](#local-authentication-hash)) every single request to the server (despite the server connection is TLS encrypted, this should be avoided) - instead only a short-time token is sent, which becomes totally worthless after expiration time
+2. The authentication with username and the [Local Authentication Hash](#local-authentication-hash) is a lot slower because of the resource intense computing of the hashes - the token validity check is very fast and cheap
 
-1. Client requests token with username and [Local Authentication Hash](#local-authentication-hash)
-2. Server hashes the received [Local Authentication Hash](#local-authentication-hash) again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and iteration count stored in `User.masterPasswordAuthenticationHash`. If the calculated hash matches the hash value also stored in `User.masterPasswordAuthenticationHash`, the client is authenticated and the server responds a valid bearer token (JWT)
+The token request process works like the following:
 
-All later requests are authenticated with the bearer token to avoid the procedure for every request.
+1. The client requests token by sending username and [Local Authentication Hash](#local-authentication-hash) to server
+2. The server checks if the requested user is not deleted (`User.deleted == 0`) and calculates the [Server Authentication Hash](#server-authentication-hash) from the received [Local Authentication Hash](#local-authentication-hash): If the result is the same as the field `User.masterPasswordAuthenticationHash` of the authenticating user, the server responds with a new token (with validity of 1 hour) to confirm successful authentication
+
+Later requests are authenticated with the token. If the token is rejected by the server (e.g. because it is expired or just invalid), the server responds with HTTP 401 error, so the client can automatically try to request a new token.
+
+### Item sharing
+
+
+
+
+
 
 
 
@@ -129,7 +169,7 @@ All later requests are authenticated with the bearer token to avoid the procedur
 
 ## Synchronization algorithm
 
-All model entities are identified via UUID (no auto increment ID to be sure clients that are not always synced do not create conflicts). The up-to-date state of an model entity is determined with the modified date. Model entities are never deleted in database - instead they contain a deleted field - this makes new/deleted detection much more simple.
+All model entities are identified via UUID (no auto increment integer ID to be sure clients that are not always in sync do not create conflicts with same auto incremented IDs). The up-to-date state of a model entity is determined with the modified date. Model entities are never deleted in database - instead they contain a deleted field - this makes new/deleted detection much more simple.
 
 The following steps are executed for all model entities:
 
