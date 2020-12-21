@@ -4,7 +4,7 @@ Pass Butler is a password manager which provides a private cloud solution to syn
 
 ## Model entities
 
-### User
+### User {#user}
 
 | Column                           | Encrypted | Description                                                                                                            |
 |:---------------------------------|:----------|:-----------------------------------------------------------------------------------------------------------------------|
@@ -16,101 +16,110 @@ Pass Butler is a password manager which provides a private cloud solution to syn
 | itemEncryptionPublicKey          | no        | The public part of the [Item Encryption Key Pair](#item-encryption-key-pair)                                           |
 | itemEncryptionSecretKey          | yes       | The private part of the [Item Encryption Key Pair](#item-encryption-key-pair)                                          |
 | settings                         | yes       | The user settings                                                                                                      |
-| deleted                          | no        | Indicates if the entity was deleted                                                                                    |
+| deleted                          | no        | Indicates if the user was deleted                                                                                      |
 | modified                         | no        | The unix timestamp of last modification                                                                                |
 | created                          | no        | The unix timestamp of creation                                                                                         |
 
-### Item
+### Item {#item}
 
-| Column   | Encrypted | Description                                                        |
-|:---------|:----------|:-------------------------------------------------------------------|
-| id       | no        | The primary key of the entity (UUID)                               |
-| username | no        | The creator / owner of the item                                    |
-| itemData | yes       | Contains actual data of the item (username, password, notes, etc.) |
-| deleted  | no        | Indicates if the entity was deleted                                |
-| modified | no        | The unix timestamp of last modification                            |
-| created  | no        | The unix timestamp of creation                                     |
+| Column   | Encrypted | Description                                                                                         |
+|:---------|:----------|:----------------------------------------------------------------------------------------------------|
+| id       | no        | The primary key of the entity (UUID)                                                                |
+| username | no        | The creator / owner of the item                                                                     |
+| data     | yes       | The actual sensible data of the item (username, password, notes, etc.), see [Item Data](#item-data) |
+| deleted  | no        | Indicates if the item was deleted                                                                   |
+| modified | no        | The unix timestamp of last modification                                                             |
+| created  | no        | The unix timestamp of creation                                                                      |
 
-### Item Authorization
+### Item Data {#item-data}
+
+| Column   | Encrypted | Description                 |
+|:---------|:----------|:----------------------------|
+| title    | no        | The title of the item       |
+| username | no        | The username of the item    |
+| password | no        | The password of the item    |
+| url      | no        | The website URL of the item |
+| notes    | no        | Some notes for the item     |
+
+### Item Authorization {#item-authorization}
 
 | Column   | Encrypted | Description                                                   |
 |:---------|:----------|:--------------------------------------------------------------|
 | id       | no        | The primary key of the entity (UUID)                          |
-| userId   | no        | The user id that can use the authorization to access the item |
-| itemId   | no        | The item id to which was granted access to                    |
+| userId   | no        | The user ID that can use the authorization to access the item |
+| itemId   | no        | The item ID to which was granted access to                    |
 | itemKey  | yes       | The symmetric key to decrypt the item data                    |
 | readOnly | no        | Indicates if the authorization to access the item is readonly |
-| deleted  | no        | Indicates if the entity was deleted                           |
+| deleted  | no        | Indicates if the authorization was revoked                    |
 | modified | no        | The unix timestamp of last modification                       |
 | created  | no        | The unix timestamp of creation                                |
 
-## Cryptographic algorithms
 
-### PBKDF2-SHA256 {#pbkdf2-sha256}
+## Security
+
+### Cryptographic algorithms
+
+#### PBKDF2-SHA256 {#pbkdf2-sha256}
 
 A key derivation algorithm that uses SHA-256. It needs a salt and an iteration count to slow down computing time (brute forcing).
 
-### AES-256-GCM {#aes-256-gcm}
+#### AES-256-GCM {#aes-256-gcm}
 
 A symmetric encryption algorithm with a key length of 256 bit in Galois/Counter mode (GCM) that ensures not only the privacy of the data but also the authentication to protect against tampering the encrypted data. A random initialization vector (IV) that must never recycled is needed for the block mode. The algorithm is very fast and suitable for all kinds of data amount.
 
-### RSA-2048-OAEP {#rsa-2048-oaep}
+#### RSA-2048-OAEP {#rsa-2048-oaep}
 
 An asymmetric encryption algorithm with a key length of 2048 bit that consists of a public and a private/secret part. The public part allows to encrypt data, the private part allows to decrypt the data. The algorithm is slow and only suitable for small data.
 
-## Cryptographic entities
+### Cryptographic entities
 
-### Master Password {#master-password}
+#### Master Password {#master-password}
 
-The user password that protects all other data. It should be long and complex because the complete security relies on it! It is stored in memory only temporary for computing and is overridden afterwards immediately.
+The user password that protects all other data. It should be long and complex because the complete security relies on it! The *Master Password* is stored in memory only temporary for computing and is overridden afterwards immediately.
 
-### Master Key {#master-key}
+#### Master Key {#master-key}
 
-The symmetric encryption/description key that is derived from the [Master Password](#master-password) with [PBKDF2-SHA256](#pbkdf2-sha256) with an iteration count and a random salt stored in `User.masterKeyDerivationInformation`. Like the [Master Password](#master-password), it is derived and stored in memory only temporary for computing and is overridden afterwards immediately.
+The *Master Key* is a symmetric [AES-256-GCM](#aes-256-gcm) key that is derived from the [Master Password](#master-password) with [PBKDF2-SHA256](#pbkdf2-sha256) with an iteration count and a random salt stored in `User.masterKeyDerivationInformation`. Like the [Master Password](#master-password), it is derived and stored in memory only temporary for computing and is overridden afterwards immediately.
 
+#### Master Encryption Key {#master-encryption-key}
 
+The [Master Key](#master-key) could be used directly to encrypt user data but if the user wants to change its [Master Password](#master-password), all encrypted bulk data would have to be re-encrypted. This is a resource consuming task and takes the risk of data curruption. To avoid this situation, the *Master Encryption Key* is introduced:
 
+It is a symmetric key for [AES-256-GCM](#aes-256-gcm), is random generated once and encrypts sensible data of the user (e.g. the user settings). The *Master Encryption Key* is stored in the `User.masterEncryptionKey` field and is itself encrypted with the [Master Key](#master-key). If the user now wants to change its [Master Password](#master-password), only the same *Master Encryption Key* needs to be re-encrypted.
 
+#### Item Key {#item-key}
 
+For a simple password manager it would be reasonable to encrypt the sensible [Item Data](#item-data) simply with the [Master Encryption Key](#master-encryption-key). But because Pass Butler offers a password item sharing functionality a bit more complexity must be introduced.
 
+Every user that have access to an [Item](#item) has also an appropriate [Item Authorization](#item-authorization) - this contains the ID of the given user and item and also the [Item Key](#item-key). 
 
-### Master Encryption Key
+The *Item Key* is a symmetric [AES-256-GCM](#aes-256-gcm) key which encrypts the actual sensible [Item Data](#item-data) of an [Item](#item) and is stored in the field `ItemAuthorization.itemKey`. It is itself encrypted with the public part of the [Item Encryption Key Pair](#item-encryption-key-pair) of the user (stored in `User.itemEncryptionPublicKey`) for whom the [Item Authorization](#item-authorization) is intended.
 
-`User.masterEncryptionKey`
+#### Item Encryption Key Pair {#item-encryption-key-pair}
 
+The Item Encryption Key Pair is an asymmetric key pair ([RSA-2048-OAEP](#rsa-2048-oaep)).
 
-- symmetrischer AES 256 Key
-- zur Verschlüsselung von geschützen Nutzerdaten
-- geschützt/verschlüsselt mit `Master Key`
-- bleibt immer gleich (wird bei Änderung des `Master Key` neu verschlüsselt)
-- geschützen Nutzerdaten werden nicht direkt mit `Master Key` verschlüsselt, um bei einer Passwortänderung die potentiell fehlerintensive Neuverschlüsselung aller einzelnen Nutzerdaten zu vermeiden)
+#### Local Authentication Hash {#local-authentication-hash}
 
-### Item Encryption Key Pair {#item-encryption-key-pair}
+This hash is used to authenticate to the server together with the username. It is a replacement for a classic username and password authentication to ensure the [Master Password](#master-password) never ever leaves the local client to ensure E2E encryption but also proves, that the user knows the master password. It is derived with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation to clearly distinguish between the [Master Key](#master-key) derivation).
 
-- asymmetrisches RSA 2048-Schlüsselpaar
-- zur Verschlüsselung von Item Keys welche die `Item.data` schützen
-- nötig damit Items anderen Nutzern geteilt werden können (neuer `ItemAuthorization` für neuen Nutzer wird angelegt und der `itemkey` mit dessen öffentlichen Schlüssel verschlüsselt)
+#### Server Authentication Hash {#server-authentication-hash}
 
+The [Local Authentication Hash](#local-authentication-hash) could be checked directly on server side to see if the user authentication was successful. It is not a clear text password so it seems to be practicable. But this would involve two major problems:
 
-
-### Local Authentication Hash {#local-authentication-hash}
-
-This hash is used to authenticate on the server together with the username. It is a replacement for a classic username and password authentication to ensure the [Master Password](#master-password) never ever leaves the local client to ensure E2E encryption but also proves, that the user knows the master password. It is derived with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation to differ from it).
-
-### Server Authentication Hash {#server-authentication-hash}
-
-This hash 
+1. It simplifies brute force attacks significantly: Because no resource consuming cryptographic hash function is involved, the attacker could try a lot of authentications per time only limited by the network link and computing power of the server hardware 
+2. It would introduce the "hash-is-the-password" situation where an attacker can straight-forward authenticate with stolen hashes
 
 
-## Server authentication
+### Server authentication
 
 
 The plain master password must NEVER sent to server to ensure E2E encryption: if the server get compromised, the attacker can't decrypt the user data if it is only possible for him to eavesdrop the authentication passwords but NOT the master passwords of the users. So the master password is first hashed with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation) on client side and send to the server where it is hashed again ([PBKDF2-SHA256](#pbkdf2-sha256) with 150000 iterations - around 50k iterations more to more slow down computing time). It is hashed on server again to avoid the "hash-is-the-password" situation where an attacker can straight-forward authenticate with stolen hashes.
 
 Token request process:
 
-1) Client requests token with username and [Local Authentication Hash](#local-authentication-hash)
-2) Server hashes the received [Local Authentication Hash](#local-authentication-hash) again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and iteration count stored in `User.masterPasswordAuthenticationHash`. If the calculated hash matches the hash value also stored in `User.masterPasswordAuthenticationHash`, the client is authenticated and the server responds a valid bearer token (JWT)
+1. Client requests token with username and [Local Authentication Hash](#local-authentication-hash)
+2. Server hashes the received [Local Authentication Hash](#local-authentication-hash) again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and iteration count stored in `User.masterPasswordAuthenticationHash`. If the calculated hash matches the hash value also stored in `User.masterPasswordAuthenticationHash`, the client is authenticated and the server responds a valid bearer token (JWT)
 
 All later requests are authenticated with the bearer token to avoid the procedure for every request.
 
@@ -118,15 +127,15 @@ All later requests are authenticated with the bearer token to avoid the procedur
 
 
 
-## Synchronization process
+## Synchronization algorithm
 
-All model entities are identified via UUID (no auto increment ID to be sure clients that are not always synced do not create conflicts). The up-to-dateness of an model entity is determined via modified timestamp. Model entities are never deleted in database - instead they contain a deleted field - this makes new/deleted detection much more simple.
+All model entities are identified via UUID (no auto increment ID to be sure clients that are not always synced do not create conflicts). The up-to-date state of an model entity is determined with the modified date. Model entities are never deleted in database - instead they contain a deleted field - this makes new/deleted detection much more simple.
 
 The following steps are executed for all model entities:
 
-1) Load list of local entities
-2) Load list of remote entities
-3) Detect new local entities and insert locally
-4) Detect new remote entities and insert remotely
-5) Detect modified local entities (according to modified field) and update locally
-6) Detect modified remote entities (according to modified field) and update remotely
+1. Load list of local entities
+2. Load list of remote entities
+3. Detect new local entities and insert locally
+4. Detect new remote entities and insert remotely
+5. Detect modified local entities (according to modified field) and update locally
+6. Detect modified remote entities (according to modified field) and update remotely
