@@ -6,19 +6,19 @@ Pass Butler is a password manager which features a private cloud solution to syn
 
 ### User {#user}
 
-| Column                           | Encrypted | Description                                                                                                            |
-|:---------------------------------|:----------|:-----------------------------------------------------------------------------------------------------------------------|
-| id                               | no        | The primary key of the entity (UUID)                                                                                   |
-| username                         | no        | A unique user identifying string                                                                                       |
-| masterPasswordAuthenticationHash | no        | The [Server Authentication Hash](#server-authentication-hash)                                                          |
-| masterKeyDerivationInformation   | no        | A random salt and iteration count to derive the [Master Key](#master-key) from the [Master Password](#master-password) |
-| masterEncryptionKey              | yes       | The [Master Encryption Key](#master-encryption-key)                                                                    |
-| itemEncryptionPublicKey          | no        | The public part of the [Item Encryption Key Pair](#item-encryption-key-pair)                                           |
-| itemEncryptionSecretKey          | yes       | The private part of the [Item Encryption Key Pair](#item-encryption-key-pair)                                          |
-| settings                         | yes       | The user settings                                                                                                      |
-| deleted                          | no        | Indicates if the user was deleted                                                                                      |
-| modified                         | no        | The unix timestamp of last modification                                                                                |
-| created                          | no        | The unix timestamp of creation                                                                                         |
+| Column                           | Encrypted | Description                                                                     |
+|:---------------------------------|:----------|:--------------------------------------------------------------------------------|
+| id                               | no        | The primary key of the entity (UUID)                                            |
+| username                         | no        | A unique user identifying string                                                |
+| masterPasswordAuthenticationHash | no        | The [Server Computed Authentication Hash](#server-computed-authentication-hash) |
+| masterKeyDerivationInformation   | no        | A random salt and iteration count to derive the [Master Key](#master-key)       |
+| masterEncryptionKey              | yes       | The [Master Encryption Key](#master-encryption-key)                             |
+| itemEncryptionPublicKey          | no        | The public part of the [Item Encryption Key Pair](#item-encryption-key-pair)    |
+| itemEncryptionSecretKey          | yes       | The private part of the [Item Encryption Key Pair](#item-encryption-key-pair)   |
+| settings                         | yes       | The user settings                                                               |
+| deleted                          | no        | Indicates if the user was deleted                                               |
+| modified                         | no        | The unix timestamp of last modification                                         |
+| created                          | no        | The unix timestamp of creation                                                  |
 
 ### Item {#item}
 
@@ -91,7 +91,7 @@ The user password that protects all other data. It should be long and complex be
 
 #### Master Key {#master-key}
 
-The *Master Key* is a symmetric [AES-256-GCM](#aes-256-gcm) key that is derived from the [Master Password](#master-password) with [PBKDF2-SHA256](#pbkdf2-sha256) with an iteration count and a random salt stored in `User.masterKeyDerivationInformation`. Like the [Master Password](#master-password), it is derived and stored in memory only temporary for computing and is overridden afterwards immediately.
+The *Master Key* is a symmetric [AES-256-GCM](#aes-256-gcm) key that is derived from the [Master Password](#master-password) with [PBKDF2-SHA256](#pbkdf2-sha256) using a random salt and an iteration count stored in `User.masterKeyDerivationInformation`. Like the [Master Password](#master-password), it is derived and stored in memory only temporary for computing and is overridden afterwards immediately.
 
 #### Master Encryption Key {#master-encryption-key}
 
@@ -114,57 +114,65 @@ The Item Encryption Key Pair is an asymmetric key pair ([RSA-2048-OAEP](#rsa-204
 - the public part (stored in `User.itemEncryptionPublicKey` field) is needed to be able to share an item to another user (the [Item Key](#item-key) of the [Item](#item) desired to share is re-encrypted with it)
 - the private part (stored in `User.itemEncryptionSecretKey` field) is needed for the other user to decrypt the encrypted [Item Key](#item-key) and access the [Item Data](#item-data) of the shared [Item](#item). The private part is itself encrypted with the [Master Encryption Key](#master-encryption-key).
 
-#### Local Authentication Hash {#local-authentication-hash}
+#### Local Computed Authentication Hash {#local-computed-authentication-hash}
 
-This hash is used to authenticate to the server together with the username. It is a replacement for a basic username and password authentication to ensure the [Master Password](#master-password) never ever leaves the local client to ensure E2E encryption but also proves, that the user knows the master password. It is derived with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation to clearly distinguish between the [Master Key](#master-key) derivation).
+The username and this hash is used to authenticate the client on the server. Because the [Master Password](#master-password) must **never ever** leave the local client to ensure E2E encryption, only a hash is sent to the server to prove that the client knows it.
 
-#### Server Authentication Hash {#server-authentication-hash}
+So the *Local Computed Authentication Hash* is derived from the [Master Password](#master-password) with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation to clearly distinguish between it).
 
-The [Local Authentication Hash](#local-authentication-hash) could be checked directly on server side to see if the user authentication was successful. It is not a clear text password so it seems to be practicable. But this would involve two major problems:
+#### Server Computed Authentication Hash {#server-computed-authentication-hash}
+
+
+
+
+The [Local Computed Authentication Hash](#local-computed-authentication-hash) could be checked directly on server side to see if the user authentication was successful. It is not a clear text password so it seems to be practicable. But this would involve two major problems:
 
 1. It simplifies brute force attacks significantly: Because no resource consuming cryptographic hash function is involved, the attacker could try a lot of authentications per time only limited by the network and computing power of the server hardware 
 2. It would introduce the "hash-is-the-password" situation where an attacker can straight-forward authenticate with stolen hashes
 
-TODO
+
 
 send to the server where it is hashed again ([PBKDF2-SHA256](#pbkdf2-sha256) with 150000 iterations - around 50k iterations more to more slow down computing time). 
 
-Server hashes the received [Local Authentication Hash](#local-authentication-hash) again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and defined iteration count stored in `User.masterPasswordAuthenticationHash`. If the calculated hash matches the hash value also stored in `User.masterPasswordAuthenticationHash`, the client is authenticated and the server responds a valid bearer token (JWT)
+Server hashes the received [Local Computed Authentication Hash](#local-computed-authentication-hash) again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and defined iteration count stored in `User.masterPasswordAuthenticationHash`. If the calculated hash matches the hash value also stored in `User.masterPasswordAuthenticationHash`, the client is authenticated and the server responds a valid bearer token (JWT)
 
 ### How does the item sharing work?
 
-As a simple example, Alice wants to share its item *Item_alice* to her friend Bob.
+
+For example Alice and Bob living in a shared apartment, Bob wants to use the wireless internet but does not know the Wifi password yet. So Alice wants to share its item “Appartment Wifi Password“ to her roommate Bob.
 
 1. Alice enters her [Master Password](#master-password) and derives her [Master Key](#master-key)
 2. Alice decrypt its [Master Encryption Key](#master-encryption-key) with the [Master Key](#master-key)
 3. Alice decrypt its private part of her [Item Encryption Key Pair](#item-encryption-key-pair) with the [Master Encryption Key](#master-encryption-key)
-4. Alice decrypt the [Item Key](#item-key) in her [Item Authorization](#item-authorization) of *Item_alice* with the private part of her [Item Encryption Key Pair](#item-encryption-key-pair)
+4. Alice decrypt the [Item Key](#item-key) in her [Item Authorization](#item-authorization) of “Appartment Wifi Password“ with the private part of her [Item Encryption Key Pair](#item-encryption-key-pair)
 5. Alice encrypt the [Item Key](#item-key) with the public part of the [Item Encryption Key Pair](#item-encryption-key-pair) of Bob
-6. Alice create a new [Item Authorization](#item-authorization) with the item ID of *Item_alice*, the user ID of Bob and the re-encrypted [Item Key](#item-key) of previous step
+6. Alice create a new [Item Authorization](#item-authorization) with the item ID of “Appartment Wifi Password“, the user ID of Bob and the re-encrypted [Item Key](#item-key) of previous step
 
-Now Bob is able to access the *Item_alice* with the following steps:
+Now Bob is able to access the “Appartment Wifi Password“ with the following steps:
 
 1. Bob enters his [Master Password](#master-password) and derives his [Master Key](#master-key)
 2. Bob decrypt its [Master Encryption Key](#master-encryption-key) with the [Master Key](#master-key)
 3. Bob decrypt its private part of his [Item Encryption Key Pair](#item-encryption-key-pair) with the [Master Encryption Key](#master-encryption-key)
-4. Bob decrypt the [Item Key](#item-key) in his [Item Authorization](#item-authorization) of *Item_alice* with the private part of his [Item Encryption Key Pair](#item-encryption-key-pair)
-5. Bob decrypt the [Item Data](#item-data) of *Item_alice* with the decrypted [Item Key](#item-key) and can access the item
+4. Bob decrypt the [Item Key](#item-key) in his [Item Authorization](#item-authorization) of “Appartment Wifi Password“ with the private part of his [Item Encryption Key Pair](#item-encryption-key-pair)
+5. Bob decrypt the [Item Data](#item-data) of “Appartment Wifi Password“ with the decrypted [Item Key](#item-key) and can access the item
+
+Know Bob thankfully can access the wireless network and enjoy his favorite series. And if the Wifi password is changed some time in the future, he automatically sees the updated item in Pass Butler.
 
 ### How does the server authentication work?
 
-All normal requests to the server must be authenticated with a valid bearer token (JWT). Only the token request must be authenticated with the username and the [Local Authentication Hash](#local-authentication-hash).
+All normal requests to the server must be authenticated with a valid bearer token (JWT). Only the token request must be authenticated with the username and the [Local Computed Authentication Hash](#local-computed-authentication-hash).
 
 The token authentication tackles two problems:
 
-1. Sending a sensible long-time static secret (the [Local Authentication Hash](#local-authentication-hash)) every single request to the server (the server connection may be TLS encrypted but this shouldn't be the assumption) - instead only a short-time token is sent, which becomes totally worthless after the short validity period
-2. The authentication with username and the [Local Authentication Hash](#local-authentication-hash) is a lot slower because of the resource intense computing of the [PBKDF2-SHA256](#pbkdf2-sha256) hashes - the token validity check is very fast and cheap
+1. Sending a sensible long-time static secret (the [Local Computed Authentication Hash](#local-computed-authentication-hash)) every single request to the server (the server connection may be TLS encrypted but this shouldn't be the assumption) - instead only a short-time token is sent, which becomes totally worthless after the short validity period (1 hour)
+2. The authentication with username and the [Local Computed Authentication Hash](#local-computed-authentication-hash) is a lot slower because of the resource intense computing of the [PBKDF2-SHA256](#pbkdf2-sha256) hashes - the token validity check is very fast and cheap
 
 The token request process works like the following:
 
-1. The client requests token by sending username and [Local Authentication Hash](#local-authentication-hash) to server
-2. The server checks if the requested user is not deleted (`User.deleted == 0`) and calculates the [Server Authentication Hash](#server-authentication-hash) from the received [Local Authentication Hash](#local-authentication-hash): If the result is the same as the field `User.masterPasswordAuthenticationHash` of the authenticating user, the server responds with a new token (with validity of 1 hour) to confirm successful authentication
+1. The client requests token by sending username and [Local Computed Authentication Hash](#local-computed-authentication-hash) to server
+2. The server checks if the requested user is not deleted (`User.deleted == 0`) and calculates the [Server Computed Authentication Hash](#server-computed-authentication-hash) from the received [Local Computed Authentication Hash](#local-computed-authentication-hash): If the result is the same as the field `User.masterPasswordAuthenticationHash` of the authenticating user, the server responds with a new token
 
-Later requests are authenticated with the token. If the token is rejected by the server (e.g. because it is expired or just invalid), the server responds with HTTP 401 error, so the client can automatically try to request a new token.
+Later requests are only authenticated with the token. If the token is rejected by the server (e.g. because it is expired or just invalid), the server responds with HTTP 401 error, so the client can automatically try to request a new token.
 
 ## Synchronization algorithm
 
