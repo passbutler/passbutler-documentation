@@ -10,7 +10,7 @@ Pass Butler is a password manager which features a private cloud solution to syn
 |:---------------------------------|:----------|:--------------------------------------------------------------------------------|
 | id                               | no        | The primary key of the entity (UUID)                                            |
 | username                         | no        | A unique user identifying string                                                |
-| masterPasswordAuthenticationHash | no        | The [Server Computed Authentication Hash](#server-computed-authentication-hash) |
+| serverComputedAuthenticationHash | no        | The [Server Computed Authentication Hash](#server-computed-authentication-hash) |
 | masterKeyDerivationInformation   | no        | A random salt and iteration count to derive the [Master Key](#master-key)       |
 | masterEncryptionKey              | yes       | The [Master Encryption Key](#master-encryption-key)                             |
 | itemEncryptionPublicKey          | no        | The public part of the [Item Encryption Key Pair](#item-encryption-key-pair)    |
