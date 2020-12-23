@@ -1,6 +1,8 @@
 # Pass Butler documentation
 
-Pass Butler is a password manager which features a private cloud solution to synchronize the user data to use it on multiple devices easily. All user data is end-to-end (E2E) encrypted to ensure the data can't even read by the server administrator. Additionally Pass Butler offers a password sharing which means a user can grant/revoke access to selected password items to other user on the server (e.g. to share WiFi passwords in a team). This involves technologies which will be documented here.
+Pass Butler is a modern password manager which provides a self-hosted cloud solution to synchronize the sensible data between multiple devices securely and privacy compliant. All user data is end-to-end (E2E) encrypted to ensure the data can't even read by the server administrator. Additionally Pass Butler offers a password item sharing which means a user can grant or revoke access to desired items to other users (e.g. to share WiFi passwords in a team or family).
+
+In this document all the involved technologies and cryptographic concepts are documented on technical level.
 
 ## Model entities
 
@@ -25,7 +27,7 @@ Pass Butler is a password manager which features a private cloud solution to syn
 | Column   | Encrypted | Description                                                                                         |
 |:---------|:----------|:----------------------------------------------------------------------------------------------------|
 | id       | no        | The primary key of the entity (UUID)                                                                |
-| username | no        | The creator / owner of the item                                                                     |
+| userId   | no        | The user ID of the creator / owner of the item                                                      |
 | data     | yes       | The actual sensible data of the item (username, password, notes, etc.), see [Item Data](#item-data) |
 | deleted  | no        | Indicates if the item was deleted                                                                   |
 | modified | no        | The unix timestamp of last modification                                                             |
@@ -58,7 +60,7 @@ Pass Butler is a password manager which features a private cloud solution to syn
 
 The Pass Butler security architecture is based on the following principles:
 
-- Usage of strong, modern cryptographic algorithms
+- Usage of strong, modern cryptographic algorithms only
 - Usage of well-known cryptographic implementations (Java Security and JavaX Crypto)
 - Unit test cryptographic code with official test vectors to ensure correct usage of the cryptographic implementations
 - Never ever persist the [Master Password](#master-password) nor the [Master Key](#master-key) to disk (store it only temporarily in memory for computations)
@@ -73,7 +75,7 @@ A key derivation algorithm that uses SHA-256. It needs a salt and an iteration c
 
 #### AES-256-GCM {#aes-256-gcm}
 
-A symmetric encryption algorithm with a key length of 256 bit in Galois/Counter mode (GCM) that ensures not only the privacy of the data but also the authentication to protect against tampering the encrypted data. A random initialization vector (IV) that must never be recycled is needed for the block mode. The algorithm is very fast and suitable for all kinds of data amounts.
+A symmetric encryption algorithm with a key length of 256 bit in Galois/Counter mode (GCM) that ensures not only the confidentiality but also the integrity of the data to protect against tampering the encrypted data. A random initialization vector (IV) that must never be reused is needed for operation. The algorithm is fast and suitable for all kinds of data amount.
 
 #### RSA-2048-OAEP {#rsa-2048-oaep}
 
@@ -81,35 +83,35 @@ An asymmetric encryption algorithm with a key length of 2048 bit that consists o
 
 #### SecureRandom
 
-Pass Butler uses the default constructor of `java.security.SecureRandom` which utilizes `/dev/urandom` on Unix based systems as the source of random data. It is non-blocking and is [capable](https://tersesystems.com/blog/2015/12/17/the-right-way-to-use-securerandom) to provide secure cryptographic keys.
+The random number generator which is used for generating cryptographic keys and initialization vectors. Pass Butler uses the default constructor of `java.security.SecureRandom` which utilizes `/dev/urandom` on Unix based systems. It is non-blocking and is [capable](https://tersesystems.com/blog/2015/12/17/the-right-way-to-use-securerandom) to provide secure cryptographic keys.
 
 ### Cryptographic entities
 
 #### Master Password {#master-password}
 
-The user password that protects all other data. It should be long and complex because the security architecture relies on it! The *Master Password* is stored in memory only temporary for computing and is overridden afterwards immediately.
+The one password that protects all other data. It should be long and complex because the complete security architecture relies on it! The *Master Password* is stored in memory only temporary for computing and is overridden afterwards immediately.
 
 #### Master Key {#master-key}
 
-The *Master Key* is a symmetric [AES-256-GCM](#aes-256-gcm) key that is derived from the [Master Password](#master-password) with [PBKDF2-SHA256](#pbkdf2-sha256) using a random salt and an iteration count stored in `User.masterKeyDerivationInformation`. Like the [Master Password](#master-password), it is derived and stored in memory only temporary for computing and is overridden afterwards immediately.
+The *Master Key* is a symmetric key for [AES-256-GCM](#aes-256-gcm) that is derived from the [Master Password](#master-password) with [PBKDF2-SHA256](#pbkdf2-sha256) using a random salt and an iteration count stored in `User.masterKeyDerivationInformation`. Like the [Master Password](#master-password), it is derived and stored in memory only temporary for computing and is overridden afterwards immediately.
 
 #### Master Encryption Key {#master-encryption-key}
 
-The [Master Key](#master-key) could be used directly to encrypt user data but if the user wants to change its [Master Password](#master-password), all encrypted bulk data would have to be re-encrypted. This is a resource consuming task and takes the risk of data corruption. To avoid this situation, the *Master Encryption Key* is introduced:
+The [Master Key](#master-key) could be used directly to encrypt user data but if the user wants to change its [Master Password](#master-password), all encrypted data would have to be re-encrypted. This is a resource consuming task and takes the risk of data corruption. To avoid this situation, the *Master Encryption Key* is introduced:
 
-It is a symmetric key for [AES-256-GCM](#aes-256-gcm), is generated once and encrypts sensible data of the user (e.g. the user settings). The *Master Encryption Key* is stored in the `User.masterEncryptionKey` field and is itself encrypted with the [Master Key](#master-key). If the user wants to change its [Master Password](#master-password) now, only the same *Master Encryption Key* needs to be re-encrypted.
+It is a symmetric key for [AES-256-GCM](#aes-256-gcm) which is generated once and encrypts sensible data of the user (e.g. the user settings). The *Master Encryption Key* is stored in the `User.masterEncryptionKey` field and is itself encrypted with the [Master Key](#master-key). If the user wants to change its [Master Password](#master-password) now, only the same *Master Encryption Key* needs to be re-encrypted.
 
 #### Item Key {#item-key}
 
 For a normal password manager it would be reasonable to encrypt the sensible [Item Data](#item-data) of an [Item](#item) just with the [Master Encryption Key](#master-encryption-key). But because an item sharing functionality is featured, a bit more complexity (and keys) must be introduced.
 
-The *Item Key* is a symmetric [AES-256-GCM](#aes-256-gcm) key which actually encrypts the [Item Data](#item-data).
+The *Item Key* is a symmetric key for [AES-256-GCM](#aes-256-gcm) which actually encrypts the [Item Data](#item-data).
 
 Every user that have access to an [Item](#item) has also an appropriate [Item Authorization](#item-authorization) - this contains an user ID, an item ID and the *Item Key* stored in the field `ItemAuthorization.itemKey`. It is itself encrypted with the public part of the [Item Encryption Key Pair](#item-encryption-key-pair) of the user for whom the [Item Authorization](#item-authorization) is intended.
 
 #### Item Encryption Key Pair {#item-encryption-key-pair}
 
-The Item Encryption Key Pair is an asymmetric key pair ([RSA-2048-OAEP](#rsa-2048-oaep)) consists of a public and a private part:
+The Item Encryption Key Pair is an asymmetric key pair for [RSA-2048-OAEP](#rsa-2048-oaep) which consists of a public and a private part:
 
 - the public part (stored in `User.itemEncryptionPublicKey` field) is needed to be able to share an item to another user (the [Item Key](#item-key) of the [Item](#item) desired to share is re-encrypted with it)
 - the private part (stored in `User.itemEncryptionSecretKey` field) is needed for the other user to decrypt the encrypted [Item Key](#item-key) and access the [Item Data](#item-data) of the shared [Item](#item). The private part is itself encrypted with the [Master Encryption Key](#master-encryption-key).
@@ -122,13 +124,13 @@ This *Local Computed Authentication Hash* is derived from the [Master Password](
 
 #### Server Computed Authentication Hash {#server-computed-authentication-hash}
 
-The [Local Computed Authentication Hash](#local-computed-authentication-hash) sent by the client could be used for direct comparison to the known value. But this idea has a major problem: If an attacker gained access to the database (e.g. through a old backup), he could directly use the included hashes to straight forward authenticate as that users via the API without any more knowledge.
+The [Local Computed Authentication Hash](#local-computed-authentication-hash) sent by the client could be used for direct comparison to the known value. But this idea has a major problem: If an attacker gained access to the database (e.g. through a old backup), he could directly use the included hashes to straight forward authenticate as that users on the server without any more knowledge.
 
-To avoid this “hash-is-the-password“ situation, the received [Local Computed Authentication Hash](#local-computed-authentication-hash) is hashed again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and iteration count stored in `User.masterPasswordAuthenticationHash` field. If the calculated hash matches the hash value also stored in this field, the authentication was successful.
+To avoid this “hash-is-the-password“ situation, the received [Local Computed Authentication Hash](#local-computed-authentication-hash) is hashed again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and iteration count stored in `User.masterPasswordAuthenticationHash` field. If the calculated hash matches the hash value also stored in this field, the authentication is successful.
 
 ### How does the item sharing work?
 
-For example Alice and Bob living in a shared apartment, Bob wants to use the wireless internet but does not know the WiFi password yet. So Alice wants to share its item “Apartment WiFi Password“ to her roommate Bob.
+For example Alice and Bob living in a shared apartment, Bob wants to use the wireless internet but does not know the WiFi password yet. So Alice wants to share the item “Apartment WiFi Password“ to her roommate Bob.
 
 1. Alice enters her [Master Password](#master-password) and derives her [Master Key](#master-key)
 2. Alice decrypt its [Master Encryption Key](#master-encryption-key) with the [Master Key](#master-key)
@@ -145,7 +147,7 @@ Now Bob is able to access the “Apartment WiFi Password“ with the following s
 4. Bob decrypt the [Item Key](#item-key) in his [Item Authorization](#item-authorization) of “Apartment WiFi Password“ with the private part of his [Item Encryption Key Pair](#item-encryption-key-pair)
 5. Bob decrypt the [Item Data](#item-data) of “Apartment WiFi Password“ with the decrypted [Item Key](#item-key) and can access the item
 
-Know Bob thankfully can access the wireless network and enjoy his favorite series. And if the WiFi password is changed some time in the future, he automatically sees the updated item in Pass Butler.
+Now Bob thankfully can access the wireless network and enjoy his favorite series. And if the WiFi password is changed some time in the future, he automatically sees the updated password in Pass Butler.
 
 ### How does the server authentication work?
 
@@ -165,13 +167,13 @@ Later requests are only authenticated with the token. If the token is rejected b
 
 ## Synchronization algorithm
 
-All model entities are identified via UUID (no auto increment integer ID to be sure clients that are not always in sync do not create conflicts with same auto incremented IDs). The up-to-date state of a model entity is determined with the modified date. Model entities are never deleted in database - instead they contain a deleted field - this makes detection of new or deleted items much more simple.
+All model entities are identified via UUID (no auto increment integer primary keys to avoid conflicts between clients generating the same auto incremented ID on different devices). The up-to-date state of a model entity is determined with the modified timestamp in the `modified` field. Model entities are never really deleted in the database - instead they contain a `deleted` field - this makes the detection of new/deleted state much more simple.
 
 The following steps are executed for all model entities:
 
 1. Load list of local entities
 2. Load list of remote entities
-3. Detect new local entities and insert locally
-4. Detect new remote entities and insert remotely
-5. Detect modified local entities (according to modified field) and update locally
-6. Detect modified remote entities (according to modified field) and update remotely
+3. Detect new local entities and insert them locally
+4. Detect new remote entities and insert them remotely
+5. Detect modified local entities (according to `modified` field) and update them locally
+6. Detect modified remote entities (according to `modified` field) and update them remotely
