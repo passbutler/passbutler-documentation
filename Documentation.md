@@ -118,26 +118,15 @@ The Item Encryption Key Pair is an asymmetric key pair ([RSA-2048-OAEP](#rsa-204
 
 The username and this hash is used to authenticate the client on the server. Because the [Master Password](#master-password) must **never ever** leave the local client to ensure E2E encryption, only a hash is sent to the server to prove that the client knows it.
 
-So the *Local Computed Authentication Hash* is derived from the [Master Password](#master-password) with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation to clearly distinguish between it).
+This *Local Computed Authentication Hash* is derived from the [Master Password](#master-password) with [PBKDF2-SHA256](#pbkdf2-sha256) using the username as the salt and 100001 iterations (one iteration more than for [Master Key](#master-key) derivation to clearly distinguish between it).
 
 #### Server Computed Authentication Hash {#server-computed-authentication-hash}
 
+The [Local Computed Authentication Hash](#local-computed-authentication-hash) sent by the client could be used for direct comparison to the known value. But this idea has a major problem: If an attacker gained access to the database (e.g. through a old backup), he could directly use the included hashes to straigt forward authenticate as that users via the API without any more knowledge.
 
-
-
-The [Local Computed Authentication Hash](#local-computed-authentication-hash) could be checked directly on server side to see if the user authentication was successful. It is not a clear text password so it seems to be practicable. But this would involve two major problems:
-
-1. It simplifies brute force attacks significantly: Because no resource consuming cryptographic hash function is involved, the attacker could try a lot of authentications per time only limited by the network and computing power of the server hardware 
-2. It would introduce the "hash-is-the-password" situation where an attacker can straight-forward authenticate with stolen hashes
-
-
-
-send to the server where it is hashed again ([PBKDF2-SHA256](#pbkdf2-sha256) with 150000 iterations - around 50k iterations more to more slow down computing time). 
-
-Server hashes the received [Local Computed Authentication Hash](#local-computed-authentication-hash) again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and defined iteration count stored in `User.masterPasswordAuthenticationHash`. If the calculated hash matches the hash value also stored in `User.masterPasswordAuthenticationHash`, the client is authenticated and the server responds a valid bearer token (JWT)
+To avoid this “hash-is-the-password“ situation, the received [Local Computed Authentication Hash](#local-computed-authentication-hash) is hashed again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and iteration count stored in `User.masterPasswordAuthenticationHash` field. If the calculated hash matches the hash value also stored in this field, the authentication was successful.
 
 ### How does the item sharing work?
-
 
 For example Alice and Bob living in a shared apartment, Bob wants to use the wireless internet but does not know the Wifi password yet. So Alice wants to share its item “Appartment Wifi Password“ to her roommate Bob.
 
@@ -164,13 +153,13 @@ All normal requests to the server must be authenticated with a valid bearer toke
 
 The token authentication tackles two problems:
 
-1. Sending a sensible long-time static secret (the [Local Computed Authentication Hash](#local-computed-authentication-hash)) every single request to the server (the server connection may be TLS encrypted but this shouldn't be the assumption) - instead only a short-time token is sent, which becomes totally worthless after the short validity period (1 hour)
+1. Sending a sensible long-time static secret (the [Local Computed Authentication Hash](#local-computed-authentication-hash)) every single request to the server (the server connection may be TLS encrypted but this shouldn't be the assumption) - instead only a short-time token is sent, which becomes totally worthless after the short validity period
 2. The authentication with username and the [Local Computed Authentication Hash](#local-computed-authentication-hash) is a lot slower because of the resource intense computing of the [PBKDF2-SHA256](#pbkdf2-sha256) hashes - the token validity check is very fast and cheap
 
 The token request process works like the following:
 
 1. The client requests token by sending username and [Local Computed Authentication Hash](#local-computed-authentication-hash) to server
-2. The server checks if the requested user is not deleted (`User.deleted == 0`) and calculates the [Server Computed Authentication Hash](#server-computed-authentication-hash) from the received [Local Computed Authentication Hash](#local-computed-authentication-hash): If the result is the same as the field `User.masterPasswordAuthenticationHash` of the authenticating user, the server responds with a new token
+2. The server checks if the requested user is not deleted (`User.deleted == 0`) and calculates the [Server Computed Authentication Hash](#server-computed-authentication-hash) from the received [Local Computed Authentication Hash](#local-computed-authentication-hash): If the calculated result matches the expected value, the server responds with a new token with a validity of 1 hour
 
 Later requests are only authenticated with the token. If the token is rejected by the server (e.g. because it is expired or just invalid), the server responds with HTTP 401 error, so the client can automatically try to request a new token.
 
