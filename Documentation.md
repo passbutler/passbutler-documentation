@@ -1,6 +1,6 @@
 # Pass Butler documentation
 
-Pass Butler is a password manager which features a private cloud solution to synchronize the user data to use it on multiple devices easily. All user data is end-to-end (E2E) encrypted to ensure the data can't even read by the server administrator. Additionally Pass Butler offers a password sharing which means a user can grant/revoke access to selected password items to other user on the server (e.g. to share Wifi passwords in a team). This involves technologies which will be documented here.
+Pass Butler is a password manager which features a private cloud solution to synchronize the user data to use it on multiple devices easily. All user data is end-to-end (E2E) encrypted to ensure the data can't even read by the server administrator. Additionally Pass Butler offers a password sharing which means a user can grant/revoke access to selected password items to other user on the server (e.g. to share WiFi passwords in a team). This involves technologies which will be documented here.
 
 ## Model entities
 
@@ -95,7 +95,7 @@ The *Master Key* is a symmetric [AES-256-GCM](#aes-256-gcm) key that is derived 
 
 #### Master Encryption Key {#master-encryption-key}
 
-The [Master Key](#master-key) could be used directly to encrypt user data but if the user wants to change its [Master Password](#master-password), all encrypted bulk data would have to be re-encrypted. This is a resource consuming task and takes the risk of data curruption. To avoid this situation, the *Master Encryption Key* is introduced:
+The [Master Key](#master-key) could be used directly to encrypt user data but if the user wants to change its [Master Password](#master-password), all encrypted bulk data would have to be re-encrypted. This is a resource consuming task and takes the risk of data corruption. To avoid this situation, the *Master Encryption Key* is introduced:
 
 It is a symmetric key for [AES-256-GCM](#aes-256-gcm), is generated once and encrypts sensible data of the user (e.g. the user settings). The *Master Encryption Key* is stored in the `User.masterEncryptionKey` field and is itself encrypted with the [Master Key](#master-key). If the user wants to change its [Master Password](#master-password) now, only the same *Master Encryption Key* needs to be re-encrypted.
 
@@ -122,34 +122,34 @@ This *Local Computed Authentication Hash* is derived from the [Master Password](
 
 #### Server Computed Authentication Hash {#server-computed-authentication-hash}
 
-The [Local Computed Authentication Hash](#local-computed-authentication-hash) sent by the client could be used for direct comparison to the known value. But this idea has a major problem: If an attacker gained access to the database (e.g. through a old backup), he could directly use the included hashes to straigt forward authenticate as that users via the API without any more knowledge.
+The [Local Computed Authentication Hash](#local-computed-authentication-hash) sent by the client could be used for direct comparison to the known value. But this idea has a major problem: If an attacker gained access to the database (e.g. through a old backup), he could directly use the included hashes to straight forward authenticate as that users via the API without any more knowledge.
 
 To avoid this “hash-is-the-password“ situation, the received [Local Computed Authentication Hash](#local-computed-authentication-hash) is hashed again with [PBKDF2-SHA256](#pbkdf2-sha256) using the random salt and iteration count stored in `User.masterPasswordAuthenticationHash` field. If the calculated hash matches the hash value also stored in this field, the authentication was successful.
 
 ### How does the item sharing work?
 
-For example Alice and Bob living in a shared apartment, Bob wants to use the wireless internet but does not know the Wifi password yet. So Alice wants to share its item “Appartment Wifi Password“ to her roommate Bob.
+For example Alice and Bob living in a shared apartment, Bob wants to use the wireless internet but does not know the WiFi password yet. So Alice wants to share its item “Apartment WiFi Password“ to her roommate Bob.
 
 1. Alice enters her [Master Password](#master-password) and derives her [Master Key](#master-key)
 2. Alice decrypt its [Master Encryption Key](#master-encryption-key) with the [Master Key](#master-key)
 3. Alice decrypt its private part of her [Item Encryption Key Pair](#item-encryption-key-pair) with the [Master Encryption Key](#master-encryption-key)
-4. Alice decrypt the [Item Key](#item-key) in her [Item Authorization](#item-authorization) of “Appartment Wifi Password“ with the private part of her [Item Encryption Key Pair](#item-encryption-key-pair)
+4. Alice decrypt the [Item Key](#item-key) in her [Item Authorization](#item-authorization) of “Apartment WiFi Password“ with the private part of her [Item Encryption Key Pair](#item-encryption-key-pair)
 5. Alice encrypt the [Item Key](#item-key) with the public part of the [Item Encryption Key Pair](#item-encryption-key-pair) of Bob
-6. Alice create a new [Item Authorization](#item-authorization) with the item ID of “Appartment Wifi Password“, the user ID of Bob and the re-encrypted [Item Key](#item-key) of previous step
+6. Alice create a new [Item Authorization](#item-authorization) with the item ID of “Apartment WiFi Password“, the user ID of Bob and the re-encrypted [Item Key](#item-key) of previous step
 
-Now Bob is able to access the “Appartment Wifi Password“ with the following steps:
+Now Bob is able to access the “Apartment WiFi Password“ with the following steps:
 
 1. Bob enters his [Master Password](#master-password) and derives his [Master Key](#master-key)
 2. Bob decrypt its [Master Encryption Key](#master-encryption-key) with the [Master Key](#master-key)
 3. Bob decrypt its private part of his [Item Encryption Key Pair](#item-encryption-key-pair) with the [Master Encryption Key](#master-encryption-key)
-4. Bob decrypt the [Item Key](#item-key) in his [Item Authorization](#item-authorization) of “Appartment Wifi Password“ with the private part of his [Item Encryption Key Pair](#item-encryption-key-pair)
-5. Bob decrypt the [Item Data](#item-data) of “Appartment Wifi Password“ with the decrypted [Item Key](#item-key) and can access the item
+4. Bob decrypt the [Item Key](#item-key) in his [Item Authorization](#item-authorization) of “Apartment WiFi Password“ with the private part of his [Item Encryption Key Pair](#item-encryption-key-pair)
+5. Bob decrypt the [Item Data](#item-data) of “Apartment WiFi Password“ with the decrypted [Item Key](#item-key) and can access the item
 
-Know Bob thankfully can access the wireless network and enjoy his favorite series. And if the Wifi password is changed some time in the future, he automatically sees the updated item in Pass Butler.
+Know Bob thankfully can access the wireless network and enjoy his favorite series. And if the WiFi password is changed some time in the future, he automatically sees the updated item in Pass Butler.
 
 ### How does the server authentication work?
 
-All normal requests to the server must be authenticated with a valid bearer token (JWT). Only the token request must be authenticated with the username and the [Local Computed Authentication Hash](#local-computed-authentication-hash).
+All normal requests to the server must be authenticated with a valid bearer token (JSON Web Token / JWT). Only the token request must be authenticated with the username and the [Local Computed Authentication Hash](#local-computed-authentication-hash).
 
 The token authentication tackles two problems:
 
