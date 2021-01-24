@@ -12,6 +12,7 @@ In this document all the involved technologies and cryptographic concepts are do
 |:---------------------------------|:----------|:--------------------------------------------------------------------------------|
 | id                               | no        | The primary key of the entity (UUID)                                            |
 | username                         | no        | A unique user identifying string                                                |
+| fullName                         | no        | The full name of the user                                                       |
 | serverComputedAuthenticationHash | no        | The [Server Computed Authentication Hash](#server-computed-authentication-hash) |
 | masterKeyDerivationInformation   | no        | A random salt and iteration count to derive the [Master Key](#master-key)       |
 | masterEncryptionKey              | yes       | The [Master Encryption Key](#master-encryption-key)                             |
@@ -42,6 +43,7 @@ In this document all the involved technologies and cryptographic concepts are do
 | password | no        | The password of the item    |
 | url      | no        | The website URL of the item |
 | notes    | no        | Some notes for the item     |
+| tags     | no        | A list of tags for the item |
 
 ### Item Authorization {#item-authorization}
 
