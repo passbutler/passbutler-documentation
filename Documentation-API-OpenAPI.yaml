@@ -1,0 +1,420 @@
+openapi: 3.0.0
+
+info:
+  title: Pass Butler synchronization server API
+  description: The Pass Butler server provides the possibility to synchronize passwords between multiple devices.
+  version: 1.0.0
+
+servers:
+  - url: https://example.passbutler.de/v1
+    description: Example server
+
+components:
+
+  securitySchemes:
+
+    RegisterAuth:
+      type: apiKey
+      in: header
+      name: Registration-Invitation-Code
+
+    BasicAuth:
+      type: http
+      scheme: basic
+
+    TokenAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: The error description
+      required:
+        - error
+
+    PublicUserSchema:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The primary key of the entity (UUID)
+        username:
+          type: string
+          description: A unique user identifying string
+        fullName:
+          type: string
+          description: The full name of the user
+        itemEncryptionPublicKey:
+          type: string
+          description: The public part of the "Item Encryption Key Pair"
+        deleted:
+          type: boolean
+          description: Indicates if the user was deleted
+        modified:
+          type: integer
+          description: The unix timestamp of last modification
+        created:
+          type: integer
+          description: The unix timestamp of creation
+      required:
+        - id
+        - username
+        - fullName
+        - itemEncryptionPublicKey
+        - deleted
+        - modified
+        - created
+
+    DefaultUserSchema:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The primary key of the entity (UUID)
+        username:
+          type: string
+          description: A unique user identifying string
+        fullName:
+          type: string
+          description: The full name of the user
+        serverComputedAuthenticationHash:
+          type: string
+          description: The "Server Computed Authentication Hash"
+        masterKeyDerivationInformation:
+          type: string
+          description: A random salt and iteration count to derive the "Master Key"
+        masterEncryptionKey:
+          type: string
+          description: The "Master Encryption Key"
+        itemEncryptionPublicKey:
+          type: string
+          description: The public part of the "Item Encryption Key Pair"
+        itemEncryptionSecretKey:
+          type: string
+          description: The private part of the "Item Encryption Key Pair"
+        settings:
+          type: string
+          description: The user settings
+        deleted:
+          type: boolean
+          description: Indicates if the user was deleted
+        modified:
+          type: integer
+          description: The unix timestamp of last modification
+        created:
+          type: integer
+          description: The unix timestamp of creation
+      required:
+        - id
+        - username
+        - fullName
+        - serverComputedAuthenticationHash
+        - masterKeyDerivationInformation
+        - masterEncryptionKey
+        - itemEncryptionPublicKey
+        - itemEncryptionSecretKey
+        - settings
+        - deleted
+        - modified
+        - created
+
+    DefaultItemSchema:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The primary key of the entity (UUID)
+        userId:
+          type: string
+          description: The user ID of the creator / owner of the item
+        data:
+          type: string
+          description: The actual sensible data of the item (username, password, notes, etc.)
+        deleted:
+          type: boolean
+          description: Indicates if the item was deleted
+        modified:
+          type: integer
+          description: The unix timestamp of last modification
+        created:
+          type: integer
+          description: The unix timestamp of creation
+      required:
+        - id
+        - userId
+        - data
+        - deleted
+        - modified
+        - created
+
+    DefaultItemAuthorizationSchema:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The primary key of the entity (UUID)
+        userId:
+          type: string
+          description: The user ID that can use the authorization to access the item
+        itemId:
+          type: string
+          description: The item ID to which was granted access to
+        itemKey:
+          type: string
+          description: The symmetric key to decrypt the item data
+        readOnly:
+          type: boolean
+          description: Indicates if the authorization to access the item is read only
+        deleted:
+          type: boolean
+          description: Indicates if the authorization was revoked
+        modified:
+          type: integer
+          description: The unix timestamp of last modification
+        created:
+          type: integer
+          description: The unix timestamp of creation
+      required:
+        - id
+        - userId
+        - itemId
+        - itemKey
+        - readOnly
+        - deleted
+        - modified
+        - created
+
+  responses:
+
+    UnauthorizedBasicAuthError:
+      description: The "Local Computed Authentication Hash" is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    UnauthorizedTokenAuthError:
+      description: The authentication token is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InvalidRequestError:
+      description: The given request data is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+paths:
+
+  /register:
+    put:
+      description: Register a local user on server.
+      security:
+        - RegisterAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DefaultUserSchema'
+      responses:
+        '204':
+          description: Successful operation
+        '400':
+          $ref: '#/components/responses/InvalidRequestError'
+        '401':
+          description: The registration invitation code is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The registration is not enabled on server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The given user with username already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /token:
+    get:
+      description: Returns a new token to authenticate other requests.
+      security:
+        - BasicAuth: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+        '401':
+          $ref: '#/components/responses/UnauthorizedBasicAuthError'
+
+  /users:
+    get:
+      description: Returns a list of public user details.
+      security:
+        - TokenAuth: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PublicUserSchema'
+        '401':
+          $ref: '#/components/responses/UnauthorizedTokenAuthError'
+
+  /user:
+    get:
+      description: Returns the user details of the authenticated user.
+      security:
+        - TokenAuth: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultUserSchema'
+        '401':
+          $ref: '#/components/responses/UnauthorizedTokenAuthError'
+    put:
+      description: Updates the user details of the authenticated user. **Important:** Only the fields `username`, `fullName`, `serverComputedAuthenticationHash`, `masterEncryptionKey`, `settings` and `modified` can be updated, nevertheless all fields must be contained in request body for validation!
+      security:
+        - TokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DefaultUserSchema'
+      responses:
+        '204':
+          description: Successful operation
+        '400':
+          $ref: '#/components/responses/InvalidRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedTokenAuthError'
+        '409':
+          description: The updated username already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/items:
+    get:
+      description: Returns a list of items the user has access to.
+      security:
+        - TokenAuth: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DefaultItemSchema'
+        '401':
+          $ref: '#/components/responses/UnauthorizedTokenAuthError'
+    put:
+      description: Updates items the user has access to. **Important:** Only the fields `data`, `deleted` and `modified` can be updated, nevertheless all fields must be contained in request body for validation!
+      security:
+        - TokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/DefaultItemSchema'
+      responses:
+        '204':
+          description: Successful operation
+        '400':
+          $ref: '#/components/responses/InvalidRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedTokenAuthError'
+        '403':
+          description: The user tried to create an item for another user or tried to update an item but has no or only a read-only/deleted item authorization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The `userId` of an item does not exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/itemauthorizations:
+    get:
+      description: Returns a list of item authorizations the user has access to.
+      security:
+        - TokenAuth: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DefaultItemAuthorizationSchema'
+        '401':
+          $ref: '#/components/responses/UnauthorizedTokenAuthError'
+    put:
+      description: Updates item authorizations the user has access to. **Important:** Only the fields `data`, `deleted` and `modified` can be updated, nevertheless all fields must be contained in request body for validation!
+      security:
+        - TokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/DefaultItemAuthorizationSchema'
+      responses:
+        '204':
+          description: Successful operation
+        '400':
+          $ref: '#/components/responses/InvalidRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedTokenAuthError'
+        '403':
+          description: The user tried to create/update an item authorization for an item that is owned by other user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: The `userId` or `itemId` of an item authorization does not exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
